@@ -1,1 +1,2 @@
 # Statistics-in-R
+The project aimed to address the low correlation between transcriptome and proteome data, challenging the conventional understanding of the "Central Dogma" in molecular biology. Despite the expectation of a direct correlation between mRNA and protein concentrations, numerous studies revealed a significant mismatch. The research focused on exploring factors beyond mRNA concentration that could influence protein concentration, using medulloblastoma cells as a model.
