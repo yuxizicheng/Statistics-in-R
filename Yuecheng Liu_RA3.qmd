@@ -1,0 +1,170 @@
+---
+title: "Yuecheng_A2"
+date: "June 2023"
+author: "Yuecheng Liu"
+format:
+  html:
+    self-contained: true
+bibliography: 
+  - literature/A3.bib
+execute: 
+  echo: true
+---
+---
+Question 1
+Demonstrate the correctness of both statements.
+a.Demonstration of the first statement “Small-bodied primates produce more energetically dense milk than do larger-bodied primates”. Firstly, I calculated the median of the "log10mass" col to determine the boundaries that distinguish animal size, then I found the mean milk.energy in small-bodied group is 0.685, which is larger than the mean value of 0.6013333 in the Larger-bodied group.
+```{r}
+mk_df = read.delim("/Users/liucheng/Desktop/Assignment_3/data/milk_energy_primates.tsv")
+#mk_df
+names(mk_df)
+sum(is.na(mk_df$milk.energy))
+# determine the median of the "log10mass" column to find the boundaries that distinguish animal size 
+median_mk = median(mk_df$log10mass)
+median_mk
+# subset the df into small-bodied and larger-bodied
+small_bodied = mk_df[mk_df$log10mass<0.54,]
+larger_bodied = mk_df[mk_df$log10mass >= 0.54,]
+# calculate the avg milk energy for each group
+avg_small = mean(small_bodied$milk.energy)
+avg_large = mean(larger_bodied$milk.energy)
+
+avg_small
+avg_large
+# create a scatter plot
+library(ggplot2)
+ggplot(mk_df, aes(x=log10mass, y=milk.energy, color= ifelse(log10mass<0.54,"Small-bodied", "Larger-bodied"))) + geom_point() +
+  geom_errorbar(aes(x = 0.25, y = avg_small, ymin = avg_small, ymax = avg_small),color='blue', width = 0.1, size = 1.5) +
+  geom_errorbar(aes(x = 1.75, y = avg_large, ymin = avg_large, ymax = avg_large),color='red', width = 0.1, size = 1.5) +
+  labs(x="log10mass", y="milk energy", color="Body Size")+
+  scale_color_manual(values = c("Small-bodied" ="blue", "Larger-bodied"="red"),
+  labels = c("Small-bodied", "Larger-bodied")) +
+  theme_minimal()
+```
+b.Demonstration of the second statement “milk energy density is not significantly correlated with two common measures of primate brain size”
+```{r}
+
+install.packages('kableExtra')
+library(broom)
+model = lm(milk.energy~neocortex.frac,data = mk_df )
+summary(model) |>
+  tidy() |> 
+  knitr::kable(digits=c(NA,2,2,2,3)) |>
+  kableExtra::kable_classic(full_width = FALSE)
+```
+Answer: The multiple R-squared value is 0.02364 means that only 2.364% of the variance in milk energy density is explained by the neocortex.frac. The F-statistic tests the overall significance of the model, the p-value for neocortex.frac is 0.556, which is grater than the typical significance level of 0.05, suggesting milk energy density is not significantly correlated with neocortex size.
+
+Question 2
+Choose one causal scheme from each group A and B in figure C and formulate all conditional independencies for three or more variables, including unknown causes, in each scheme of your choice.
+Answer: my choices: A1,B2
+A1: U is a confounder of N and M, and E is a collider of N and M. Based on the codes blow, we can formulate the conditional independencies as follows, consider U is lifespan
+$M \perp N \;|\; U$
+$U \perp E \;|\; N , M$
+B2 : N is a collider of U and M, N is a direct cause of E
+$U \perp E \;|\; N$
+$M \perp E \;|\; N$
+
+Question 3
+a.Which conditional independencies that you reported in question 2 are testable? Test these.
+b.Which conditional independencies that you reported in question 2 are testable? Test these.
+
+```{r}
+
+model1 = lm(neocortex.frac ~ log10mass,data = mk_df)
+summary(model1)
+#p-value is0.000511 , the summary indicates that there is a significant linear relationship between "neocortex.frac" and "log10mass" in the dataset.
+model2 = lm(milk.energy ~ log10mass,data = mk_df)
+anova(model2)
+#Based on the result of the anova test for with a p-value of 0.075, suggest M is related to E
+model3 <- lm(neocortex.frac ~ log10mass + milk.energy, data = mk_df)
+anova(model3)
+
+# For "log10mass", the p-value is 04.577e-05, Therefore, there is strong evidence to suggest that M has a significant effect on N.
+
+#On the other hand, for E, the p-value is 0.003764, which is less than 0.05. This indicates that E has a significant effect on N.
+model4 = lm(neocortex.frac ~ log10mass* milk.energy, data = mk_df)
+anova(model3,model4)
+# The p-value (Pr(>F)) for Model 2 is 0.9838 suggests that the added interaction term (log10mass * milk.energy) in Model 2 does not significantly improve the fit compared to Model 1. Therefore, there is no evidence to support the inclusion of the interaction term in the model.
+```
+
+
+According to the above analysis，M is dependent of N, when adding the variable of E, the model still shows the E also related to N , so the Hypothesis $M \perp E \;|\; N$ does not hold. Hence, group A2 is a possible causal scheme that generated the data.
+
+Question 4
+Choose the causal scheme that you deem most plausible and analyse the coefficients of the effects corresponding to the edges in that scheme. First, briefly describe your plan how you will calculate these coefficients. What do you conclude from the scheme about the hypotheses stated in the introduction?
+
+Answer:
+In A2, M is a collider of U and N, N is a confounder of M and E, and E is a collider of N and M. The hypotheses stated in the introduction are:(1) energy density of milk decreases with the size of organisms, e.g.Larger organs, less energy density of milk, which mean M is negatively related to E. (2)Having a larger brain, especially with a larger proportion of the cortex, requires a higher energy density of milk.Namely, N is positively related to E.
+
+1.To find out a effect between N to E, we model E as a function of N and M
+```{r}
+install.packages('kableExtra')
+library(broom)
+model.E = lm(milk.energy ~ neocortex.frac+log10mass , data = mk_df)
+summary(model.E) |>
+  tidy() |>
+  knitr::kable(digits = c(NA,1,1,1,4)) |>
+  kableExtra::kable_classic(full_width = FALSE)
+
+# Fit the model
+model_E <- lm(milk.energy ~ neocortex.frac, data = mk_df)
+
+# Make predictions
+mk_df$pred_model_add <- predict(model_E, newdata = mk_df)
+
+# Plot the data and predictions
+library(ggplot2)
+p <- ggplot(mk_df, aes(x = neocortex.frac, y = milk.energy, colour = log10mass)) +
+  geom_point(size = 3) + 
+  geom_line(aes(y = pred_model_add), lwd = 1)
+
+print(p)
+
+
+```
+The table above shows, both M and N related to E.From the plot, we can conclude, the smaller average body mass of adult females(M), the higher energy density of milk (E), which It is verified that hypothesis one is correct.
+```{r}
+library(ggplot2)
+p <- ggplot(mk_df, aes(x = log10mass, y = milk.energy, colour = neocortex.frac)) +
+  geom_point(size = 3) + 
+  geom_line(aes(y = pred_model_add), lwd = 1)
+
+print(p)
+```
+```{r}
+# find the relationship between N and M
+# fit a linear regression model with N as the predictor and M as the response
+
+model_NM = lm (log10mass~ neocortex.frac, data=mk_df)
+summary(model_NM)
+
+```
+the p value is 0.0005114, which show a significant relation between N and M. From the plot above, we can observe that at the same position on the x-axis, the dots exhibit a lighter blue color when E is higher. This indicates a positive relationship between N and E, providing support for the second hypothesis.
+
+To identify whether U is independent of N given M,firstly,we should fit a linear model between U and N,if they are independent, and when conditioned on M, U and N become dependent, then M is the collider of N and U, then scheme A2 is verified.
+
+Question 5
+Predict what the milk energy density in humans would become if a selection pressure would cause the neocortex fraction to increase from currently 0.755 to 0.770 in the future. Describe your plan and reasoning behind it to answer this question. Which other variables would likely also change?
+
+Answer: 
+Prefiction: if a selection pressure would cause the neocortex fraction to increase from currently 0.755 to 0.770 in the future, the milk enerfy density in human would become higher.
+
+My plan:
+1、Fit a linear model between N and E.
+2. Obtain the coefficient estimates from linear model, using the coeficient estimates, predict change in E when given the change in N.
+3. Calculate the predict value of E using the new value of N (0.770).
+4. Compare the value in different value of N.
+
+Reasoning:
+1. The linear model provides an estimate of the relationship between two variables based on the observed data.
+2. by using the coefficients estimates from the model, we can predict the change in E associated with a given change in N.
+
+The possible changed variables are: brain size, higher metabolic rate and longer lifespan or lower body mass.
+
+
+References:
+Burini, R.C., and Leonard, W.R. (2018) The evolutionary roles of nutrition selection and dietary quality in the human brain size and encephalization. Nutrire 43.
+Herculano-Houzel, S. (2012) The remarkable, yet not extraordinary, human brain as a scaled-up primate brain and its associated cost. Proceedings of the National Academy of Sciences 109: 10661–10668.
+Hinde, K., and Milligan, L.A. (2011) Primate milk: Proximate mechanisms and ultimate perspectives. Evolutionary Anthropology 20: 9–23.
+Kleiber, M. (1947) Body size and metabolic rate. Physiological Reviews 27: 511–541.
+West, G.B., Brown, J.H., and Enquist, B.J. (1999) The fourth dimension of life: Fractal geometry and allometric scaling of organisms. Science 284: 1677–1679.

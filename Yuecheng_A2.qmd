@@ -1,0 +1,282 @@
+---
+title: "Yuecheng_A2"
+date: "May 2023"
+author: "Yuecheng Liu"
+format:
+  html:
+    self-contained: true
+bibliography: 
+  - literature/A2.bib
+execute: 
+  echo: true
+---
+
+```{r}
+#| echo: false
+# Not all knitr options can be put into the global execute section of the YAML header. You can put these other global knitr R-chunk options like 'message' here.
+# message=FALSE : do not print messages (dplyr and ggplot do that often)
+knitr::opts_chunk$set(message=FALSE)
+```
+
+***
+
+1、Load the data. After loading only use the High Confidence Data (HCD) from sheet Data, i.e. discard the other data in this table.
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+install.packages("openxlsx")
+library(openxlsx)
+
+
+# loading the Data
+Data_d = read_excel("/Users/liucheng/Desktop/Assignment_2/rawdata/msb201059-sup-0001.xls", sheet="Data",skip=9)
+#Data_d
+# Remove rows where HCD column does not contain "HCD"
+HCD_d = Data_d |>
+  filter(HCD == "HCD")
+#HCD_d
+write.xlsx(HCD_d, file = "HCD_d.xlsx")
+```
+
+2、Check the integrity of the data
+2a.Whether all EnsemblGeneID’s in Data occur in MARS_Data and vice versa.
+
+```{r}
+# loading MARS_Data
+Mars_d = read_excel("/Users/liucheng/Desktop/Assignment_2/rawdata/msb201059-sup-0001.xls", sheet="MARS_data",skip=5)
+#Mars_d
+# rename the col"Name" to "EnsemblGeneID"
+Mars_d = Mars_d |>
+  rename(EnsemblGeneID=Name)
+ID_1 = HCD_d |>
+  select(EnsemblGeneID)
+ID_2 = Mars_d |>
+  select(EnsemblGeneID)
+# ID_1
+# ID_2
+# check if all EnsemblGeneIDs in Data occur in MARS_Data
+Data_not_in_Mars = setdiff(ID_1, ID_2)
+if (length(Data_not_in_Mars)==0) {
+  message("All EnsemblGeneIDs in Data occur in MARS_Data")
+} else {
+  message("The following EnsemblGeneIDs in Data do not occur in MARS_Data:")
+  print(Data_not_in_Mars)
+}
+# check if all EnsemblGeneIDs in MARS_Data occur in Data
+Mars_not_in_Data = setdiff(ID_2, ID_1)
+if (length(Mars_not_in_Data) ==0) {
+  message("All EnsemblGeneIDs in MARS_Data occur in Data")
+} else {
+  message("The following EnsemblGeneIDs in MARS_Data do not occur in Data:")
+  print(Mars_not_in_Data)
+}
+```
+Answer: There are 35 EnsemblGeneIDs in Data do not occur in MARS_Data, while all EnsemblGeneIDs in MARS_Data occur in Data.
+
+2b.Whether each EnsemblGeneID occurs only once in Data. If not, what is the problem (display it)? Describe what you will do with data that is apparently erroneous and carry out this plan.
+
+```{r}
+library(dplyr)
+# Count the frequency of each EnsemblGeneID in Data
+ID_count <- table(HCD_d$EnsemblGeneID)
+
+# Check for duplicated EnsemblGeneIDs
+dup_IDs <- names(ID_count[ID_count > 1])
+
+# Print the duplicated EnsemblGeneIDs, if any
+if (length(dup_IDs) == 0) {
+  cat("Each EnsemblGeneID occurs only once in Data.")
+} else {
+  cat("The following EnsemblGeneIDs occur more than once in Data:\n")
+  print(ID_count[dup_IDs])
+}
+dup_IDs|>
+  knitr::kable(format='html') |>
+  kableExtra::kable_classic(full_width=FALSE)
+```
+To solve the erroneous data, I will remove the duplicates from the HCD_d dataframe using the duplicated() function and subsetting the dataframe.
+```{r}
+HCD_clean = HCD_d [!duplicated(HCD_d$EnsemblGeneID),]
+#HCD_clean
+```
+
+For the remaining part of the assignment only use data for genes that are present in both tables (Data and MARS_Data)!
+
+3、Make a similar figure using the data from the Data sheet. Looking at the shape of the cloud, what could be the problem if you would model log(Protein concentration) as a function of log(mRNA concentration)?
+```{r}
+library(dplyr)
+# select EnsemblGeneIDs that are in both HCD_d and Mars_d
+commonIDs = semi_join(HCD_clean,Mars_d, by = "EnsemblGeneID")$EnsemblGeneID
+#commonIDs
+# subset rows in HCD_clean that have common EnsemblGeneIDs
+common_data = HCD_clean |>
+  filter(EnsemblGeneID %in% commonIDs)
+#common_data
+library(ggplot2)
+p1 = ggplot(common_data,aes(x=log2(mRNA), y=log2(Protein)))+
+  geom_point()+
+  labs(x="log2(mRNA)", y="log2(Protein)")+
+  ggtitle("log2Protein vs log2mRNA")
+  theme_classic()
+p1
+```
+Answer: There are some data points significantly deviate the main trend.They results from the regulation of translation and protein degradation(Vogel,2010).If I were to model log(Protein concentration) as a function of log(mRNA concentration), the problem could be that the resulting model may not be a good fit for the dataset and may have limited predictive ability, particularly for the outliers.
+
+4、Make a simple linear model (using lm()) that predicts log(Protein) based on mRNA only. Take into account your conclusion from the previous question, i.e. you might want to use other transformations of mRNA than its log-transformation. Make at least two models of which one uses untransformed mRNA concentrations. Use an objective criterion to decide which of these models fits the data best. Describe your conclusions. Make tables summarizing model properties if necessary. Tip: use the glance() function from the broom package to calculate several characteristics of the lm fits and put them in a nice table. Use bind_rows() to glue separately calculated rows together to a table. bind_rows() takes two or more rows as arguments or a list of rows as a single argument.
+
+Answer: AIC (Akaike Information Criterion) and BIC (Bayesian Information Criterion) are two statistical measures commonly used in model selection and comparison.
+```{r}
+library(broom)
+# model using log-transformed mRNA
+model_log = lm(log2(Protein) ~ log2(mRNA), data = common_data)
+# model using untransformed mRNA
+model_raw = lm(log2(Protein) ~ mRNA, data = common_data)
+# use objective criterions AIC and BIC for both models
+AIC_log = AIC(model_log)
+BIC_log = BIC(model_log)
+AIC_raw = AIC(model_raw)
+BIC_raw = BIC(model_raw)
+# create a table summarizing the models and their fit
+table = bind_rows(
+  glance(model_log) |> add_column(Transform = "log"),
+  glance(model_raw) |> add_column(Transform = "raw")
+)
+table = table |>
+  select(Transform,r.squared,adj.r.squared,AIC,BIC)
+table
+```
+Answer：The lower AIC and BIC, the model fits better, so the untransformed mRNA concentrations model is my best model fit.
+
+5、Calculate the residuals of your best model fit. Plot these residuals as a function of the log2 of the length of the coding sequence (log2CSLength). This is called a “partial regression plot”. 
+
+```{r}
+library(ggplot2)
+
+# calculate residuals of the best model
+res <- residuals(model_raw)
+
+# create data frame with log2CSLength and residuals
+partial_data <- data.frame(log2CSLength = log2(length(common_data$`Coding Sequence`)), residuals = res)
+
+# plot partial regression plot
+ggplot(partial_data, aes(x = log2CSLength, y = residuals)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(x = "log2CSL", y = "Residuals") +
+  theme_bw()
+# perform rank_based correlation test
+
+pre = predict(model_raw)
+#pre
+cor_test = cor.test(pre,res,method = "spearman")
+cor_test
+```
+Answer: the result shows there is a significant correlation between the residuals of my best model and log2CSLength.
+
+6、Include log2CSLength as an additional predictor in your best model until now. Compare the original model and the model with the additional predictor using an objective criterion to decide whether log2CSLength is likely to add predictive value to the model.
+```{r}
+
+model_data = data.frame(mRNA = common_data$mRNA,
+                       log2_CSLength =log2(nchar(common_data$`Coding Sequence`)),
+log2_Protein = log2(common_data$Protein))
+
+model_raw_new = lm(log2_Protein ~ mRNA + log2_CSLength, data = model_data)
+model_raw_new
+AIC(model_raw)
+AIC(model_raw_new)
+BIC(model_raw)
+BIC(model_raw_new)
+```
+Answer: Lower AIC and BIC indicate a better fit, hence the model with the additional predictor "log2CSLength" add predictive value to the model.
+
+7.Calculate partial rank correlation tests for all of the remaining predictor variables using the residuals of your currently best model. 
+```{r}
+install.packages("ppcor")
+library(ppcor)
+res_new = residuals(model_raw_new)
+# res_new
+# select remaining predictor variables
+predictor_vars = Mars_d[,c(4:6,8:134)]
+#predictor_vars
+partial_cor = function(var) {
+  # calculate partial correlation between residuals and predictor variable
+pr = pcor.test(x= res_new, y=predictor_vars[,var],z= log2(common_data$Protein), method = "spearman")
+# extract correlation coe and p-value
+corr_coef = pr$estimate
+p_value = pr$p.value
+return(data.frame(predictor= var,correlation = corr_coef, p_value = p_value))
+}
+# apply function to all remaining predictor variables
+results = lapply(names(predictor_vars),partial_cor)
+#results
+#combine results into a single data frame
+results_df = do.call(rbind, results)
+
+# sort results by p-value and display top 10 predictors
+library(dplyr)
+top_predictors = results_df |> 
+  arrange(p_value) |>
+  head(10)
+top_predictors
+```
+
+8、Starting from your currently best model create four models that progressively include the top 4 predictors the top-10 list in the previous exercise. Make an objective model comparison. What is the percentage (or fraction) of “Variance explained” by your best model?
+```{r}
+# add log2TotalLength
+model_data_1 = data.frame(mRNA = common_data$mRNA,
+                       log2_CSLength =log2(nchar(common_data$`Coding Sequence`)),
+log2_Protein = log2(common_data$Protein),
+log2TotalLength = Mars_d$log2TotalLength)
+
+model_raw_new_1 = lm(log2_Protein ~ mRNA + log2_CSLength +log2TotalLength, data = model_data_1)
+#model_raw_new_1
+
+# add log2UTR5_TotalLength
+model_data_2 = data.frame(mRNA = common_data$mRNA,
+                       log2_CSLength =log2(nchar(common_data$`Coding Sequence`)),
+log2_Protein = log2(common_data$Protein),
+log2TotalLength = Mars_d$log2TotalLength,
+log2UTR5_TotalLength= Mars_d$log2UTR5_TotalLength)
+
+model_raw_new_2 = lm(log2_Protein ~ mRNA + log2_CSLength +log2TotalLength+log2UTR5_TotalLength, data = model_data_2)
+#model_raw_new_2
+
+# add CS_cg
+model_data_3 = data.frame(mRNA = common_data$mRNA,
+                       log2_CSLength =log2(nchar(common_data$`Coding Sequence`)),
+log2_Protein = log2(common_data$Protein),
+log2TotalLength = Mars_d$log2TotalLength,
+log2UTR5_TotalLength= Mars_d$log2UTR5_TotalLength,
+CS_cg= Mars_d$CS_cg)
+
+model_raw_new_3 = lm(log2_Protein ~ mRNA + log2_CSLength +log2TotalLength+log2UTR5_TotalLength+CS_cg, data = model_data_3)
+#model_raw_new_3
+
+# add Potential_PEST
+model_data_4 = data.frame(mRNA = common_data$mRNA,
+                       log2_CSLength =log2(nchar(common_data$`Coding Sequence`)),
+log2_Protein = log2(common_data$Protein),
+log2TotalLength = Mars_d$log2TotalLength,
+log2UTR5_TotalLength= Mars_d$log2UTR5_TotalLength,
+CS_cg= Mars_d$CS_cg,
+Potential_PEST = Mars_d$Potential_PEST)
+
+model_raw_new_4 = lm(log2_Protein ~ mRNA + log2_CSLength +log2TotalLength+log2UTR5_TotalLength+CS_cg+Potential_PEST, data = model_data_4)
+#model_raw_new_4
+
+# compare models using an objective criterion (adjusted R-squared)
+summary(model_raw_new_1)$adj.r.squared
+summary(model_raw_new_2)$adj.r.squared
+summary(model_raw_new_3)$adj.r.squared
+summary(model_raw_new_4)$adj.r.squared
+```
+Answer: My best model is model_raw_new_3, which contains predictor variables:mRNA + log2_CSLength+log2TotalLength+log2UTR5_TotalLength+CS_cg, the variance explained is 0.453014
+
+9、What is the problem with the variable selection procedure that we just followed? Under which condition would we miss variables with possibly higher predictive value than the ones that we selected above based on significance in a correlation test?
+
+Answer: The problem with the variable selection procedure that we just followed is that it only considers adding individual predictor variables rather than taking into account their interactive predicting powers or the possibility of non-linear relationships.Under both two of these conditions we would miss variables with possibly higher predictive value than the ones that we selected above based on significance in a correlation test.
+
+References
+Vogel, C., Sousa Abreu, R. de, Ko, D., Le, S.-Y., Shapiro, B.A., Burns, S.C., et al. (2010) Sequence signatures and mRNA concentration can explain two-thirds of protein abundance variation in a human cell line. Molecular Systems Biology 6: 400.
